@@ -91,7 +91,7 @@ pie
 ```{r}
 library(ggmap)
 #library(dmm)
-register_google(key = 'AIzaSyAtlORy7YG5gJ9GA52crQgHJqmz_2xYeEM')
+register_google(key = 'Enter Google Map API Key')
 #get the map of LA
 Chi_map <- qmap(location = "Chicago", zoom = 12)
 Chi_map
