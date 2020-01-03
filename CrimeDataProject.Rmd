@@ -1,0 +1,234 @@
+---
+title: "CS 571 Section 01"
+author: "Rohit,Harika,Aayush"
+date: "Nov 16, 2019"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+  html_notebook:
+    df_print: paged
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    toc: yes
+  word_document:
+    toc: yes
+---
+
+### Load Data
+```{r}
+url="C:/Users/rohit/Desktop/CS Courses/DPA/Project/Crimes_-_2001_to_present.csv"
+testurl="C:/Users/rohit/Desktop/CS Courses/DPA/Project/Crimes_2017_Test.csv"
+df <- data.frame(read.csv(file=url, header=TRUE, sep=","))
+testdf <- data.frame(read.csv(file=testurl, header=TRUE, sep=","))
+sprintf("Number of Rows in Dataframe: %s", format(nrow(df),big.mark = ","))
+df <- subset(df, select = -c(Case.Number, Block, IUCR,Beat,District,Ward,Community.Area,X.Coordinate,Y.Coordinate,FBI.Code,Updated.On))
+testdf <- subset(testdf, select = -c(Case.Number, Block, IUCR,Beat,District,Ward,Community.Area,X.Coordinate,Y.Coordinate,FBI.Code,Updated.On))
+head(df)
+write.csv(df,"format.csv", row.names = FALSE)
+```
+
+### Data Processing
+```{r}
+library(lubridate)
+# Create a variable count with value 1
+df$Count <- 1
+testdf$Count <- 1
+# Convert Date from factor to date
+df$Date <- mdy_hms(df$Date)
+testdf$Date <- mdy_hms(testdf$Date)
+# Extract hour from Date
+df$Hour <- substring(df$Date, 12,13)
+testdf$Hour <- substring(testdf$Date, 12,13)
+# Drop time from Date
+df$Date <- as.Date(df$Date, format="%m/%d/%Y")
+testdf$Date <- as.Date(testdf$Date, format="%m/%d/%Y")
+write.csv(df,"format.csv", row.names = FALSE)
+```
+
+```{r}
+aa = table(rowSums(is.na(df)))
+aa
+#Remove all NA
+df <- df[complete.cases(df),]
+testdf <- testdf[complete.cases(testdf),]
+head(df)
+```
+###Visualizations
+```{r}
+library(ggplot2)
+library(ggrepel)
+df_loc <- sort(table(df$Location.Description),decreasing = TRUE)
+df_loc <- data.frame(df_loc[df_loc > 10000])
+colnames(df_loc) <- c("Location", "Frequency")
+df_loc$Percentage <- df_loc$Frequency / sum(df_loc$Frequency)
+df_loc
+lp<-ggplot(df_loc, aes(x=Location, y=Frequency, fill=Location)) + geom_bar(stat="identity") + 
+  theme(axis.text.x=element_blank()) + geom_text_repel(data=df_loc, aes(label=Location))
+lp
+```
+
+```{r}
+library(ggplot2)
+library(ggrepel)
+df_category <- sort(table(df$Primary.Type),decreasing = TRUE)
+df_category <- data.frame(df_category[df_category > 10000])
+colnames(df_category) <- c("Category", "Frequency")
+df_category$Percentage <- df_category$Frequency / sum(df_category$Frequency)
+df_category
+bp<-ggplot(df_category, aes(x=Category, y=Frequency, fill=Category)) + geom_bar(stat="identity") + 
+  theme(axis.text.x=element_blank()) + geom_text_repel(data=df_category, aes(label=Category))
+bp
+```
+
+```{r}
+bp<-ggplot(df_category, aes(x="", y=Percentage, fill=Category)) + geom_bar(stat="identity") 
+pie <- bp + coord_polar("y") 
+pie
+```
+###Integrating With Map
+```{r}
+library(ggmap)
+#library(dmm)
+register_google(key = 'AIzaSyAtlORy7YG5gJ9GA52crQgHJqmz_2xYeEM')
+#get the map of LA
+Chi_map <- qmap(location = "Chicago", zoom = 12)
+Chi_map
+#unfactor variable
+#df$Latitude <- unfactor(df$Latitude)
+#df$Longitude <- unfactor(df$Longitude)
+```
+####HeatMaps
+```{r}
+library(dplyr)
+#select relevant variables
+mapping <- df %>% select(Primary.Type, Longitude, Latitude) %>% filter(Primary.Type == 'THEFT') %>%
+  na.omit() 
+Chi_map + geom_density_2d(aes(x = Longitude, y = Latitude), data = mapping) +
+  stat_density2d(data = mapping, 
+    aes(x = Longitude, y = Latitude, fill = ..level.., alpha = ..level..), size = 0.01, 
+    bins = 16, geom = "polygon") + scale_fill_gradient(low = "green", high = "red", 
+    guide = FALSE) + scale_alpha(range = c(0, 0.3), guide = FALSE)
+
+```
+
+```{r}
+mapping <- df %>% select(Primary.Type, Longitude, Latitude) %>% filter(Primary.Type == 'MOTOR VEHICLE THEFT') %>%
+  na.omit() 
+
+Chi_map + geom_density_2d(aes(x = Longitude, y = Latitude), data = mapping) +
+  stat_density2d(data = mapping, 
+    aes(x = Longitude, y = Latitude, fill = ..level.., alpha = ..level..), size = 0.01, 
+    bins = 16, geom = "polygon") + scale_fill_gradient(low = "green", high = "red", 
+    guide = FALSE) + scale_alpha(range = c(0, 0.3), guide = FALSE)
+
+```
+###Predict Crime Spots
+```{r}
+library(leaflet)
+
+data <- df[1:10000,] # display the first 10,000 rows
+data$popup <- paste("<b>Category: </b>", data$Category,
+                    "<br>", "<b>Description: </b>", data$Primary.Type,
+                    "<br>", "<b>Description: </b>", data$Description,
+                    "<br>", "<b>Date: </b>", data$Date,
+                    "<br>", "<b>Time: </b>", data$Hour,
+                    "<br>", "<b>Arrest?: </b>", data$Arrest,
+                    "<br>", "<b>Longitude: </b>", data$Longitude,
+                    "<br>", "<b>Latitude: </b>", data$Latitude)
+
+leaflet(data, width = "100%") %>% addTiles() %>%
+  addTiles(group = "OSM (default)") %>%
+  addProviderTiles(provider = "Esri.WorldStreetMap",group = "World StreetMap") %>%
+  addProviderTiles(provider = "Esri.WorldImagery",group = "World Imagery") %>%
+  # addProviderTiles(provider = "NASAGIBS.ViirsEarthAtNight2012",group = "Nighttime Imagery") %>%
+  addMarkers(lng = ~Longitude, lat = ~Latitude, popup = data$popup, clusterOptions = markerClusterOptions()) %>%
+  addLayersControl(
+    baseGroups = c("OSM (default)","World StreetMap", "World Imagery"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+
+
+```
+###Clustering Analysis
+```{r}
+library(fields)
+lon = df$Longitude[1:1000]
+lat = df$Latitude[1:1000]
+threshold.in.km <- 40
+coors <- data.frame(lon,lat)
+
+testlon = testdf$Longitude[1:600]
+testlat = testdf$Latitude[1:600]
+threshold.in.km <- 40
+testcoors <- data.frame(testlon,testlat)
+
+#distance matrix
+dist.in.km.matrix <- rdist.earth(coors,miles = F,R=6371)
+
+#clustering
+fit <- hclust(as.dist(dist.in.km.matrix), method = "single")
+clusters <- cutree(fit,h = threshold.in.km)
+str(fit)
+plot(lon, lat, col = clusters, pch = 20)
+
+```
+### K-Menas Clustering - Cluster Analysis
+```{r}
+#Theft <- df %>% select(Primary.Type, Longitude, Latitude) %>% filter(Primary.Type == 'THEFT') %>%
+#  na.omit() 
+#lon1 = Theft$Longitude[1:500]
+#lat1 = Theft$Latitude[1:500]
+#coors <- data.frame(lon1,lat1)
+
+library(geosphere)
+library(ggmap)
+library(NbClust)
+geo.dist = function(df) {
+  require(geosphere)
+  d <- function(i,z){         # z[1:2] contain long, lat
+    dist <- rep(0,nrow(z))
+    dist[i:nrow(z)] <- distHaversine(z[i:nrow(z),1:2],z[i,1:2])
+    return(dist)
+  }
+  dm <- do.call(cbind,lapply(1:nrow(df),d,df))
+  return(as.dist(dm))
+}
+
+
+k<-list()
+betweenSSByTotalSS <- list()
+for(i in 1:6){
+k[[i]] <- kmeans(coors,i)  
+}
+for(i in 1:6){
+betweenSSByTotalSS[[i]]<-k[[i]]$betweenss/k[[i]]$totss 
+}
+plot(1:6,betweenSSByTotalSS,type="b",ylab="Between SS by Total SS",xlab="Clusters(k)")
+
+
+km <- kmeans(geo.dist(coors),centers=2)
+coors$Borough <- as.factor(km$cluster)
+Chi_map <- get_map(location = "Chicago", zoom = 10)
+pqr = ggmap(Chi_map) + geom_point(aes(x = coors$lon, y = coors$lat, colour = as.factor(Borough)),data = coors)
+plot(pqr)
+
+testcoors <- testcoors %>% na.omit() 
+
+testkm <- kmeans(geo.dist(testcoors),centers=2)
+testcoors$Borough <- as.factor(testkm$cluster)
+Chi_map <- get_map(location = "Chicago", zoom = 10)
+testpqr = ggmap(Chi_map) + geom_point(aes(x = testcoors$testlon, y = testcoors$testlat, colour = as.factor(Borough)),data = testcoors)
+plot(testpqr)
+
+#print(km['size'])
+#print(km$totss)
+print(km)
+#print(km$withinss)
+```
+
+
+
+
+
